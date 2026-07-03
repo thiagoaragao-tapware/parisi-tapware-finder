@@ -1,68 +1,200 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="pt-BR">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Parisi Tapware Finder</title>
-  <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Parisi Tapware Finder — Warehouse Stock System</title>
+<meta name="description" content="Sistema interno de consulta de produtos e localização de estoque — Parisi Tapware">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="ambient ambient-one"></div>
-  <div class="ambient ambient-two"></div>
 
-  <main class="shell">
-    <section class="hero">
-      <div class="brand-block">
-        <div class="brand-line"></div>
-        <p class="eyebrow">PARISI</p>
-        <h1>BATHWARE</h1>
-        <p class="subline">Tapware location system</p>
+<!-- Ambient coordinate-grid backdrop -->
+<div class="grid-backdrop" aria-hidden="true"></div>
+
+<div class="app">
+
+  <!-- ============ HEADER ============ -->
+  <header class="topbar">
+    <div class="topbar__brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none">
+          <path d="M16 3 L28 9 V23 L16 29 L4 23 V9 Z" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M16 3 V29 M4 9 L28 23 M28 9 L4 23" stroke="currentColor" stroke-width="0.7" opacity="0.5"/>
+          <circle cx="16" cy="16" r="2.6" fill="currentColor"/>
+        </svg>
       </div>
-
-      <div class="search-card">
-        <div class="search-bar">
-          <span class="icon">⌕</span>
-          <input id="searchInput" type="search" autocomplete="off" placeholder="Digite o código do produto" autofocus />
-          <button id="clearBtn" aria-label="Clear search">×</button>
-        </div>
-        <div id="suggestions" class="suggestions hidden"></div>
+      <div class="brand-text">
+        <span class="brand-text__name">PARISI TAPWARE</span>
+        <span class="brand-text__sub">Finder — NSW Warehouse Stock System</span>
       </div>
-    </section>
-
-    <section id="featured" class="featured empty-state">
-      <div class="empty-copy">
-        <span class="small-gold">Ready</span>
-        <h2>Procure um item</h2>
-        <p>Digite código, nome, barcode, location ou shelf. A localização principal aparece aqui imediatamente.</p>
-      </div>
-    </section>
-
-    <section class="quick-actions">
-      <button class="pill active" data-filter="all">All</button>
-      <button class="pill" data-filter="withLocation">Location OK</button>
-      <button class="pill" data-filter="withoutLocation">No Location</button>
-      <button class="pill" data-filter="withShelf">Shelf OK</button>
-      <button class="pill" data-filter="withoutShelf">No Shelf</button>
-    </section>
-
-    <section class="info-row">
-      <div class="mini-panel"><span>Total</span><strong id="totalCount">—</strong></div>
-      <div class="mini-panel"><span>Results</span><strong id="resultCount">—</strong></div>
-      <div class="mini-panel"><span>Recent</span><strong id="recentChip">—</strong></div>
-    </section>
-
-    <section id="results" class="results"></section>
-  </main>
-
-  <dialog id="detailDialog">
-    <div class="modal">
-      <button id="closeDialog" class="close">×</button>
-      <div id="detailContent"></div>
     </div>
-  </dialog>
 
-  <div id="toast"></div>
-  <script src="data.js"></script>
-  <script src="script.js"></script>
+    <div class="topbar__actions">
+      <button class="btn btn--ghost" id="btnFavorites" title="Ver favoritos">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 17.3 5.8 21l1.6-7.1L2 9.2l7.2-.6L12 2l2.8 6.6 7.2.6-5.4 4.7L18.2 21z"/></svg>
+        <span>Favoritos</span>
+        <span class="count-pill" id="favCount">0</span>
+      </button>
+      <button class="btn btn--ghost" id="btnImport" title="Importar planilha CSV/XLSX">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <span>Importar planilha</span>
+      </button>
+      <input type="file" id="fileImport" accept=".csv,.xlsx,.xls" hidden>
+      <div class="clock" id="clock">--:--:--</div>
+    </div>
+  </header>
+
+  <!-- ============ HERO / SEARCH ============ -->
+  <section class="hero">
+    <p class="hero__eyebrow">SCAN &middot; LOCATE &middot; RETRIEVE</p>
+    <h1 class="hero__title">Encontre qualquer produto <span>em segundos.</span></h1>
+
+    <div class="scanner" id="scanner">
+      <span class="scanner__corner scanner__corner--tl"></span>
+      <span class="scanner__corner scanner__corner--tr"></span>
+      <span class="scanner__corner scanner__corner--bl"></span>
+      <span class="scanner__corner scanner__corner--br"></span>
+      <span class="scanner__sweep" aria-hidden="true"></span>
+
+      <svg class="scanner__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input
+        type="text"
+        id="searchInput"
+        class="scanner__input"
+        placeholder="Digite o código, nome ou barcode do produto…"
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <button class="scanner__clear" id="btnClear" title="Limpar busca" aria-label="Limpar busca">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6 18 18M6 18 18 6"/></svg>
+      </button>
+      <span class="scanner__kbd">/</span>
+    </div>
+
+    <div class="recent" id="recentWrap" hidden>
+      <span class="recent__label">Buscas recentes</span>
+      <div class="recent__chips" id="recentChips"></div>
+    </div>
+  </section>
+
+  <!-- ============ QUICK STATS ============ -->
+  <section class="stats" id="stats" aria-label="Estatísticas do estoque">
+    <div class="stat" data-filter="all">
+      <span class="stat__value" id="statTotal">0</span>
+      <span class="stat__label">Produtos totais</span>
+    </div>
+    <div class="stat stat--ok" data-filter="hasLoc">
+      <span class="stat__value" id="statWithLoc">0</span>
+      <span class="stat__label">Com location</span>
+    </div>
+    <div class="stat stat--warn" data-filter="noLoc">
+      <span class="stat__value" id="statNoLoc">0</span>
+      <span class="stat__label">Sem location</span>
+    </div>
+    <div class="stat stat--ok" data-filter="hasShelf">
+      <span class="stat__value" id="statWithShelf">0</span>
+      <span class="stat__label">Com shelf</span>
+    </div>
+    <div class="stat stat--warn" data-filter="noShelf">
+      <span class="stat__value" id="statNoShelf">0</span>
+      <span class="stat__label">Sem shelf</span>
+    </div>
+  </section>
+
+  <!-- ============ FILTERS ============ -->
+  <section class="filters">
+    <div class="filters__row">
+      <button class="chip" data-filter="all">Todos</button>
+      <button class="chip" data-filter="hasLoc">Com location</button>
+      <button class="chip" data-filter="noLoc">Sem location</button>
+      <button class="chip" data-filter="hasShelf">Com shelf</button>
+      <button class="chip" data-filter="noShelf">Sem shelf</button>
+      <button class="chip" data-filter="favorites">★ Favoritos</button>
+
+      <select class="select" id="filterSection">
+        <option value="">Todas as sections</option>
+      </select>
+      <select class="select" id="filterStatus">
+        <option value="">Todos os status</option>
+      </select>
+
+      <button class="btn btn--subtle" id="btnClearFilters">Limpar filtros</button>
+    </div>
+  </section>
+
+  <!-- ============ RESULTS ============ -->
+  <section class="results">
+    <div class="results__bar">
+      <div class="results__count" id="resultsCount">Digite algo para começar a busca</div>
+      <div class="results__actions">
+        <div class="view-toggle" id="viewToggle">
+          <button class="view-toggle__btn is-active" data-view="cards" title="Visualização em cards">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          </button>
+          <button class="view-toggle__btn" data-view="table" title="Visualização em tabela">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          </button>
+        </div>
+        <button class="btn btn--subtle" id="btnExport">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          Exportar CSV
+        </button>
+      </div>
+    </div>
+
+    <div class="cards-grid" id="cardsGrid"></div>
+
+    <div class="table-wrap" id="tableWrap" hidden>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Product Code</th>
+            <th>Description</th>
+            <th>Location</th>
+            <th>Shelf</th>
+            <th>Qty</th>
+            <th>Section</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="empty-state" id="emptyState" hidden>
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="10" cy="10" r="6.5"/><path d="m20 20-4.35-4.35"/><path d="M7.5 10h5M10 7.5v5"/></svg>
+      <h3>Nenhum produto encontrado</h3>
+      <p>Verifique o código digitado ou tente uma parte do nome / barcode.</p>
+    </div>
+
+    <div class="load-more-wrap" id="loadMoreWrap" hidden>
+      <button class="btn btn--outline" id="btnLoadMore">Carregar mais resultados</button>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span>Parisi Tapware Finder</span>
+    <span class="dot">&middot;</span>
+    <span id="footerCount">0 produtos carregados</span>
+    <span class="dot">&middot;</span>
+    <span>Dados locais — nenhuma informação sai do seu navegador</span>
+  </footer>
+</div>
+
+<!-- ============ DETAIL PANEL ============ -->
+<div class="overlay" id="overlay"></div>
+<aside class="detail-panel" id="detailPanel" aria-hidden="true">
+  <div class="detail-panel__inner" id="detailPanelInner"></div>
+</aside>
+
+<!-- ============ TOAST ============ -->
+<div class="toast" id="toast"></div>
+
+<script src="data.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
