@@ -3,123 +3,77 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#050403" />
-  <title>PARISI - Tapware Finder</title>
+  <meta name="theme-color" content="#070604" />
+  <title>PARISI Tapware Finder</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="texture"></div>
-  <main class="app">
-    <section id="home" class="home">
-      <header class="brand">
-        <h1>PARISI</h1>
-        <p>TAPWARE FINDER</p>
+  <main class="app" id="app">
+    <section class="screen home" id="homeScreen">
+      <div class="brandBlock">
+        <div class="brandName">PARISI</div>
+        <div class="brandSub">TAPWARE FINDER</div>
+      </div>
+
+      <div class="searchBox homeSearch">
+        <span class="searchIcon">⌕</span>
+        <input id="homeSearch" type="search" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Search code, name, location or shelf" />
+        <button id="homeGo" class="searchGo" aria-label="Search">→</button>
+      </div>
+      <div id="homeSuggestions" class="suggestions"></div>
+
+      <button id="ocrBtn" class="ocrLine" type="button">OCR SCAN</button>
+      <input id="ocrInput" type="file" accept="image/*" capture="environment" hidden />
+      <div id="ocrStatus" class="ocrStatus"></div>
+
+      <div class="workspaceLabel">WORKSPACE</div>
+      <button id="openBts" class="workspace" type="button">
+        <div>
+          <div class="workspaceTitle">BACK TO STOCK</div>
+          <div class="workspaceText">Group queued items by location</div>
+        </div>
+        <span>→</span>
+      </button>
+
+      <footer>Found an error or missing info? Please let <strong>Thiago</strong> know.</footer>
+    </section>
+
+    <section class="screen result hidden" id="resultScreen">
+      <header class="topbar">
+        <button id="backHome" class="backBtn" type="button">←</button>
+        <div class="miniBrand">PARISI</div>
+        <div class="searchBox miniSearch">
+          <span class="searchIcon">⌕</span>
+          <input id="resultSearch" type="search" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+          <button id="resultGo" class="searchGo" aria-label="Search">→</button>
+        </div>
       </header>
-
-      <section class="search-block">
-        <div class="search-line">
-          <span class="mag">⌕</span>
-          <input id="searchInput" type="search" autocomplete="off" autocapitalize="characters" placeholder="Search code, name, location or shelf" />
-          <button id="searchBtn" class="go-btn" aria-label="Search">→</button>
-          <button id="clearBtn" class="clear-btn" aria-label="Clear">×</button>
-        </div>
-        <div class="actions-row">
-          <button id="ocrBtn" class="ocr-btn">OCR</button>
-        </div>
-        <div id="suggestions" class="suggestions" hidden></div>
-      </section>
-
-      <section class="workspace">
-        <p class="label">Workspace</p>
-        <button id="openBackstock" class="workspace-row">
-          <span>Back to Stock</span>
-          <small id="backstockMini">0 items queued</small>
-          <b>→</b>
-        </button>
-      </section>
+      <div id="resultSuggestions" class="suggestions compact"></div>
+      <div class="notice">ⓘ Found an error or missing info? Please let <strong>Thiago</strong> know.</div>
+      <div id="foundMeta" class="foundMeta">0 PRODUCTS FOUND</div>
+      <div id="resultContent"></div>
     </section>
 
-    <section id="resultScreen" class="result" hidden>
-      <nav class="topbar">
-        <button id="backHome" class="nav-btn">←</button>
-        <span>PARISI</span>
-        <button id="resultClose" class="nav-btn">×</button>
-      </nav>
-
-      <div class="notice">Found an error or missing info? Please let <strong>Thiago</strong> know.</div>
-
-      <p class="found">1 product found</p>
-
-      <article class="item-panel">
-        <div class="item-head">
-          <h2 id="resultCode"></h2>
-          <p id="resultName"></p>
-        </div>
-
-        <button id="copyLocation" class="location-strip">
-          <span>Location</span>
-          <strong id="resultLocation"></strong>
-          <small>Tap to copy</small>
-        </button>
-
-        <div class="info-grid">
-          <button id="copyShelf" class="info-cell copy-cell">
-            <span>Shelf</span>
-            <strong id="resultShelf"></strong>
-            <small>Tap to copy</small>
-          </button>
-          <div id="stockCell" class="info-cell">
-            <span>Available Stock</span>
-            <strong id="resultStock"></strong>
-            <em id="stockBadge"></em>
-          </div>
-          <div id="statusCell" class="info-cell">
-            <span>Stocking Status</span>
-            <strong id="resultStatus"></strong>
-          </div>
-          <div class="info-cell">
-            <span>Category</span>
-            <strong id="resultSection"></strong>
-          </div>
-        </div>
-
-        <button id="addToBackstock" class="backstock-action">Back to Stock</button>
-      </article>
-    </section>
-
-    <section id="backstockScreen" class="backstock" hidden>
-      <nav class="topbar">
-        <button id="closeBackstock" class="nav-btn">←</button>
-        <span>BACK TO STOCK</span>
-        <button id="clearBackstock" class="nav-btn danger">Clear</button>
-      </nav>
-      <p id="backstockCount" class="queue-count">0 items grouped by location.</p>
-      <div id="backstockGroups" class="location-groups"></div>
-      <button id="exportBackstock" class="export-btn">Export CSV</button>
+    <section class="screen bts hidden" id="btsScreen">
+      <header class="topbar only">
+        <button id="backFromBts" class="backBtn" type="button">←</button>
+        <div class="miniBrand">PARISI</div>
+      </header>
+      <div class="sectionTitle">BACK TO STOCK</div>
+      <div class="btsActions">
+        <button id="clearBts" type="button">CLEAR LIST</button>
+        <button id="exportBts" type="button">EXPORT CSV</button>
+      </div>
+      <div id="btsContent" class="btsContent"></div>
+      <footer>Found an error or missing info? Please let <strong>Thiago</strong> know.</footer>
     </section>
   </main>
 
-  <footer>Found an incorrect location? Please report it to Thiago.</footer>
-
-  <dialog id="ocrDialog" class="ocr-dialog">
-    <div class="dialog-inner">
-      <button id="closeOcr" class="nav-btn dialog-close">×</button>
-      <p class="label">OCR Text Scan</p>
-      <h2>Read item code</h2>
-      <p class="ocr-note">Point the camera at the printed product code, then tap READ TEXT.</p>
-      <video id="camera" autoplay playsinline muted></video>
-      <canvas id="captureCanvas" hidden></canvas>
-      <button id="readText" class="backstock-action">Read Text</button>
-      <p id="ocrStatus" class="ocr-status">Camera not started.</p>
-      <div id="ocrCandidates" class="ocr-candidates"></div>
-    </div>
-  </dialog>
-
   <div id="toast" class="toast"></div>
-
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="data.js"></script>
   <script src="script.js"></script>
+  <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{});}</script>
 </body>
 </html>

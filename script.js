@@ -1,368 +1,143 @@
+const products = (window.PRODUCTS || []).filter(p => p.location || p.shelf);
+const byCode = new Map(products.map(p => [p.code.toUpperCase(), p]));
+let current = null;
+let bts = JSON.parse(localStorage.getItem('parisi_bts') || '[]');
+
 const $ = id => document.getElementById(id);
-const rawData = window.PARISI_DATA || [];
-const STORAGE_KEY = 'parisi_back_to_stock_minimal_v9';
-let query = '';
-let selectedItem = null;
-let cameraStream = null;
+const home = $('homeScreen'), result = $('resultScreen'), btsScreen = $('btsScreen');
+const homeSearch = $('homeSearch'), resultSearch = $('resultSearch');
 
-function fmt(value, fallback = '—') {
-  const s = String(value ?? '').trim();
-  return s ? s : fallback;
+function norm(q){ return (q || '').toString().trim().toUpperCase().replace(/\s+/g,''); }
+function isInStock(p){ return Number(p.stock || 0) > 0; }
+function locationText(p){ return p.location || 'NO LOCATION'; }
+function shelfText(p){ return p.shelf || 'NO SHELF'; }
+function combinedLoc(p){
+  if (p.location && p.shelf) return `${p.location} · ${p.shelf}`;
+  if (p.location) return p.location;
+  return p.shelf;
 }
-function escapeHtml(value) {
-  return fmt(value, '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
-}
-function normalizeCode(value) {
-  return String(value || '')
-    .toUpperCase()
-    .replace(/\s+/g, '')
-    .replace(/[–—]/g, '-')
-    .replace(/,/g, '.')
-    .replace(/O(?=\d)/g, '0')
-    .replace(/(?<=\d)O/g, '0')
-    .replace(/I(?=\d)/g, '1')
-    .replace(/(?<=\d)I/g, '1')
-    .replace(/[^A-Z0-9.\-\/]/g, '');
-}
-function cleanLocation(value) {
-  let s = String(value || '').trim().toUpperCase();
-  if (!s) return '';
-  s = s.replace(/^\/NSW\//, '').replace(/^NSW\//, '').replace(/\s+/g, '');
-  s = s.replace(/[^A-Z0-9.]/g, '');
-  const m = s.match(/^([A-Z])(\d)(?:\.)?(\d{1,2})$/);
-  if (m) return `${m[1]}${m[2]}${m[3].padStart(2,'0')}`;
-  const m2 = s.match(/^([A-Z])(\d{2})(\d)$/);
-  if (m2) return `${m2[1]}${m2[2]}${m2[3]}`;
-  return s.replace('.', '');
-}
-function normalizeBarcode(value) {
-  const s = String(value || '').trim();
-  if (!s) return '';
-  return s;
-}
-function hasUsableLocationOrShelf(item) {
-  return Boolean(item.location || item.shelf);
-}
-const data = rawData.map((item, index) => {
-  const code = fmt(item.code || item.Product || item.CODE, '');
-  const description = fmt(item.description || item.name || item.category, '');
-  const location = cleanLocation(item.location || item.LOCATION || item.Location);
-  const shelf = fmt(item.shelf || item.SHELF || item.Column1, '').toUpperCase();
-  const availableStock = fmt(item.availableStock || item.stock || item.Stock, '');
-  const stockingStatus = fmt(item.stockingStatus || item.status || item.Status || item.shelfStatus, '');
-  const barcode = normalizeBarcode(item.barcode || item.Barcode || item.BARCODE);
-  const section = fmt(item.section || item.Section, '');
-  return {
-    ...item,
-    id: index,
-    code,
-    description,
-    location,
-    shelf,
-    availableStock,
-    stockingStatus,
-    barcode,
-    section,
-    searchText: [code, description, location, shelf, barcode, section, stockingStatus].join(' ').toLowerCase(),
-    normalizedCode: normalizeCode(code).toLowerCase()
-  };
-}).filter(hasUsableLocationOrShelf);
+function show(screen){ [home,result,btsScreen].forEach(s=>s.classList.add('hidden')); screen.classList.remove('hidden'); window.scrollTo(0,0); }
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1300); }
 
-function scoreItem(item, q) {
-  if (!q) return 0;
-  const lower = q.toLowerCase();
-  const norm = normalizeCode(q).toLowerCase();
-  const code = item.code.toLowerCase();
-  let score = 0;
-  if (code === lower || item.normalizedCode === norm) score += 1000;
-  if (code.startsWith(lower) || item.normalizedCode.startsWith(norm)) score += 550;
-  if (code.includes(lower) || item.normalizedCode.includes(norm)) score += 350;
-  if (item.location.toLowerCase() === lower) score += 460;
-  if (item.location.toLowerCase().startsWith(lower)) score += 280;
-  if (item.shelf.toLowerCase() === lower) score += 420;
-  if (item.shelf.toLowerCase().startsWith(lower)) score += 250;
-  if (item.description.toLowerCase().includes(lower)) score += 150;
-  if (item.barcode && item.barcode.toLowerCase().includes(lower)) score += 140;
-  if (item.searchText.includes(lower)) score += 40;
-  return score;
+function matches(q){
+  q = norm(q);
+  if(!q) return [];
+  return products.filter(p => {
+    const hay = [p.code,p.name,p.location,p.shelf,p.status,p.category,p.section].join(' ').toUpperCase();
+    return hay.includes(q);
+  }).slice(0,30);
 }
-function getMatches() {
-  const q = query.trim();
-  if (!q) return [];
-  return data.map(item => ({...item, _score: scoreItem(item, q)}))
-    .filter(item => item._score > 0)
-    .sort((a,b) => b._score - a._score || a.code.localeCompare(b.code))
-    .slice(0, 12);
+
+function renderSuggestions(input, box){
+  const list = matches(input.value).slice(0,7);
+  if(!norm(input.value)){ box.classList.remove('show'); box.innerHTML=''; return; }
+  box.classList.add('show');
+  if(!list.length){ box.innerHTML = '<div class="emptySuggest">No product found.</div>'; return; }
+  box.innerHTML = list.map((p,i)=>`<button class="suggestion" data-code="${p.code}">
+    <span class="suggestionCode">${p.code}</span><span class="suggestionLoc">${combinedLoc(p)}</span>
+    <span class="suggestionName">${p.name || 'No description'}</span>
+  </button>`).join('');
+  [...box.querySelectorAll('.suggestion')].forEach(btn=>btn.onclick=()=>openProduct(btn.dataset.code));
 }
-function highlight(text) {
-  const safe = escapeHtml(text);
-  const q = query.trim();
-  if (!q) return safe;
-  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  try { return safe.replace(new RegExp(`(${escaped})`, 'ig'), '<span class="match">$1</span>'); }
-  catch { return safe; }
+
+function searchFrom(input){
+  const q = norm(input.value);
+  if(!q) return;
+  const exact = products.find(p => norm(p.code)===q || norm(p.location)===q || norm(p.shelf)===q);
+  if(exact){ openProduct(exact.code); return; }
+  const list = matches(q);
+  show(result); resultSearch.value = input.value;
+  renderResults(list);
 }
-function renderSuggestions() {
-  const box = $('suggestions');
-  const matches = getMatches();
-  if (!query.trim() || !matches.length) {
-    box.hidden = true;
-    box.innerHTML = '';
+
+function openProduct(code){
+  const p = byCode.get(code.toUpperCase());
+  if(!p) return;
+  current = p;
+  show(result);
+  resultSearch.value = p.code;
+  $('resultSuggestions').classList.remove('show');
+  renderResults([p]);
+}
+
+function renderResults(list){
+  $('foundMeta').textContent = `${list.length} PRODUCT${list.length===1?'':'S'} FOUND`;
+  const el = $('resultContent');
+  if(!list.length){ el.innerHTML = '<div class="notFound">No searchable product found.</div>'; return; }
+  if(list.length > 1){
+    el.innerHTML = `<div class="multiList">${list.map(p=>productCard(p,true)).join('')}</div>`;
+    [...el.querySelectorAll('[data-open]')].forEach(b=>b.onclick=()=>openProduct(b.dataset.open));
     return;
   }
-  box.hidden = false;
-  box.innerHTML = matches.map(item => `
-    <button class="suggestion" data-id="${item.id}">
-      <span>
-        <strong>${highlight(item.code)}</strong>
-        <small>${highlight(item.description || 'No description')}</small>
-      </span>
-      <span class="suggestion-loc">${escapeHtml(item.location || 'NO LOC')}<span class="suggestion-shelf">${escapeHtml(item.shelf || 'NO SHELF')}</span></span>
-    </button>
-  `).join('');
+  el.innerHTML = productCard(list[0], false);
+  bindCard(el, list[0]);
 }
 
-function numericStock(item) {
-  const raw = String(item.availableStock ?? '').replace(/,/g, '').trim();
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : 0;
+function productCard(p, compact){
+  const good = isInStock(p);
+  const stockLabel = good ? 'STOCKED' : 'NO STOCK';
+  return `<article class="itemCard">
+    <div class="productHead">
+      <button class="codeTag" ${compact?`data-open="${p.code}"`:''}>${p.code}</button>
+      <div class="prodName">${p.name || 'No description'}</div>
+    </div>
+    <div class="mainLocation" data-copy="${combinedLoc(p)}">
+      <div class="label">SHELF LOCATION</div>
+      <div class="bigLoc">${combinedLoc(p).replace('·',' ')}</div>
+    </div>
+    <div class="infoGrid">
+      <div class="infoBox"><div class="label">STOCKING STATUS</div><div class="statusPill ${good?'':'bad'}">${stockLabel}</div></div>
+      <div class="infoBox"><div class="label">AVAILABLE STOCK</div><div class="value ${good?'stockGood':'stockBad'}">${Number(p.stock||0)} units</div></div>
+      <div class="infoBox" style="grid-column:1/-1"><div class="label">CATEGORY</div><div class="value">${p.category || p.section || 'TAPWARE'}</div></div>
+    </div>
+    ${compact?'':`<button class="btsBtn" id="addBts">BACK TO STOCK</button>`}
+  </article>`;
 }
-function applyStockVisuals(item) {
-  const stockCell = $('stockCell');
-  const statusCell = $('statusCell');
-  const badge = $('stockBadge');
-  stockCell.classList.remove('stock-ok','stock-bad');
-  statusCell.classList.remove('status-ok','status-bad');
-  const n = numericStock(item);
-  const status = String(item.stockingStatus || '').toLowerCase();
-  const available = n > 0 && !status.includes('discontinued');
-  stockCell.classList.add(available ? 'stock-ok' : 'stock-bad');
-  statusCell.classList.add(available ? 'status-ok' : 'status-bad');
-  badge.textContent = available ? 'In stock' : 'No stock';
-  $('resultStock').textContent = `${n} unit${Math.abs(n) === 1 ? '' : 's'}`;
-  if (!item.stockingStatus) $('resultStatus').textContent = available ? 'Stocked' : 'No stock';
+function bindCard(el,p){
+  const loc = el.querySelector('[data-copy]'); if(loc) loc.onclick=()=>{navigator.clipboard?.writeText(loc.dataset.copy); toast('Copied');};
+  const b = $('addBts'); if(b) b.onclick=()=>addBts(p);
 }
-function runSearch() {
-  const first = getMatches()[0];
-  if (first) selectById(first.id);
-  else toast('No matching product found');
-}
-
-function showHome() {
-  document.body.classList.remove('result-mode','backstock-mode');
-  $('home').hidden = false;
-  $('resultScreen').hidden = true;
-  $('backstockScreen').hidden = true;
-  renderQueueMini();
-  setTimeout(() => $('searchInput').focus(), 80);
-}
-function showResult(item) {
-  selectedItem = item;
-  document.body.classList.add('result-mode');
-  document.body.classList.remove('backstock-mode');
-  window.scrollTo({top:0, left:0, behavior:'instant'});
-  $('home').hidden = true;
-  $('resultScreen').hidden = false;
-  $('backstockScreen').hidden = true;
-  $('resultCode').textContent = item.code;
-  $('resultName').textContent = item.description || 'No description';
-  $('resultLocation').textContent = item.location || 'NO LOC';
-  $('resultShelf').textContent = item.shelf || 'NO SHELF';
-  $('resultStock').textContent = fmt(item.availableStock);
-  $('resultStatus').textContent = fmt(item.stockingStatus);
-  $('resultSection').textContent = fmt(item.section || item.category || 'Tapware');
-  applyStockVisuals(item);
-  vibrate(12);
-}
-function selectById(id) {
-  const item = data.find(x => String(x.id) === String(id));
-  if (!item) return;
-  $('suggestions').hidden = true;
-  $('searchInput').value = item.code;
-  query = item.code;
-  showResult(item);
-}
-function toast(message) {
-  const el = $('toast');
-  el.textContent = message;
-  el.classList.add('show');
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.classList.remove('show'), 1500);
-}
-function vibrate(ms = 10) {
-  if (navigator.vibrate) navigator.vibrate(ms);
-}
-async function copy(text, label) {
-  if (!text) return;
-  try { await navigator.clipboard.writeText(text); toast(`${label} copied`); vibrate(8); }
-  catch { toast('Copy failed'); }
-}
-function getQueue() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-  catch { return []; }
-}
-function setQueue(list) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  renderQueueMini();
-  renderBackstock();
-}
-function addCurrentToBackstock() {
-  if (!selectedItem) return;
-  const list = getQueue();
-  const row = {
-    uid: `${selectedItem.id}-${Date.now()}`,
-    id: selectedItem.id,
-    code: selectedItem.code,
-    description: selectedItem.description,
-    location: selectedItem.location,
-    shelf: selectedItem.shelf,
-    stock: selectedItem.availableStock,
-    time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})
-  };
-  setQueue([row, ...list]);
+function addBts(p){
+  if(!bts.some(x=>x.code===p.code)) bts.push(p);
+  localStorage.setItem('parisi_bts', JSON.stringify(bts));
   toast('Added to Back to Stock');
-  vibrate(20);
 }
-function locationOrder(loc) {
-  const s = cleanLocation(loc);
-  const m = s.match(/^([A-Z])(\d)(\d{2})$/);
-  if (!m) return s;
-  return `${m[1]}-${m[2].padStart(2,'0')}-${m[3]}`;
-}
-function groupQueue() {
-  const groups = new Map();
-  getQueue().forEach(item => {
-    const key = item.location || 'NO LOCATION';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(item);
-  });
-  return [...groups.entries()].sort((a,b) => locationOrder(a[0]).localeCompare(locationOrder(b[0])));
-}
-function renderQueueMini() {
-  const count = getQueue().length;
-  $('backstockMini').textContent = `${count} item${count === 1 ? '' : 's'} queued`;
-}
-function renderBackstock() {
-  const groups = groupQueue();
-  const total = getQueue().length;
-  $('backstockCount').textContent = `${total} item${total === 1 ? '' : 's'} grouped by location.`;
-  const holder = $('backstockGroups');
-  if (!total) {
-    holder.innerHTML = `<div class="empty-queue">Search an item and press <strong>BACK TO STOCK</strong> to build your grouped list.</div>`;
-    return;
-  }
-  holder.innerHTML = groups.map(([loc, items]) => `
-    <article class="group">
-      <div class="group-head"><strong>${escapeHtml(loc)}</strong><small>${items.length} item${items.length === 1 ? '' : 's'}</small></div>
-      ${items.map(item => `
-        <div class="queue-item">
-          <div><h4>${escapeHtml(item.code)}</h4><p>${escapeHtml(item.description)} · Shelf ${escapeHtml(item.shelf || 'NO SHELF')} · ${escapeHtml(item.time)}</p></div>
-          <button class="remove-item" data-uid="${escapeHtml(item.uid)}">Done</button>
-        </div>`).join('')}
-    </article>
-  `).join('');
-}
-function removeQueueItem(uid) {
-  setQueue(getQueue().filter(item => item.uid !== uid));
-  toast('Item completed');
-}
-function exportBackstock() {
-  const list = getQueue();
-  if (!list.length) return toast('Queue is empty');
-  const rows = [['Location','Shelf','Code','Description','Stock','Time'], ...list.map(i => [i.location, i.shelf, i.code, i.description, i.stock, i.time])];
-  const csv = rows.map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g,'""')}"`).join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
-  a.download = 'parisi-back-to-stock.csv';
-  a.click();
-}
-async function startOCR() {
-  const dialog = $('ocrDialog');
-  dialog.showModal();
-  $('ocrStatus').textContent = 'Opening camera...';
-  $('ocrCandidates').innerHTML = '';
-  try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
-    $('camera').srcObject = cameraStream;
-    $('ocrStatus').textContent = 'Camera ready. Center the product code and tap READ TEXT.';
-  } catch (error) {
-    $('ocrStatus').textContent = `Camera error: ${error.message}`;
-  }
-}
-function stopOCR() {
-  if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
-  cameraStream = null;
-  $('camera').srcObject = null;
-}
-function extractCandidates(text) {
-  const cleaned = String(text || '').toUpperCase().replace(/\s+/g, ' ');
-  const raw = cleaned.match(/[A-Z0-9]{1,5}[.\-][A-Z0-9.\-\/]{2,}/g) || [];
-  const expanded = raw.map(normalizeCode).filter(Boolean);
-  return [...new Set(expanded)].slice(0, 8);
-}
-async function readText() {
-  const video = $('camera');
-  const canvas = $('captureCanvas');
-  const status = $('ocrStatus');
-  if (!video.videoWidth) return status.textContent = 'Camera is not ready yet.';
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
-  status.textContent = 'Reading text...';
-  $('ocrCandidates').innerHTML = '';
-  try {
-    const result = await Tesseract.recognize(canvas, 'eng', {
-      logger: m => {
-        if (m.status) status.textContent = `OCR: ${m.status}${m.progress ? ` ${Math.round(m.progress * 100)}%` : ''}`;
-      }
-    });
-    const candidates = extractCandidates(result.data.text);
-    if (!candidates.length) {
-      status.textContent = 'No product code detected. Try closer, brighter and flatter.';
-      return;
-    }
-    status.textContent = 'Choose the detected code:';
-    $('ocrCandidates').innerHTML = candidates.map(c => `<button data-code="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join('');
-  } catch (error) {
-    status.textContent = `OCR error: ${error.message}`;
-  }
-}
-function searchCandidate(code) {
-  query = code;
-  $('searchInput').value = code;
-  const found = getMatches()[0];
-  $('ocrDialog').close();
-  stopOCR();
-  if (found) showResult(found);
-  else { showHome(); renderSuggestions(); toast('No matching product found'); }
+function renderBts(){
+  show(btsScreen);
+  const el = $('btsContent');
+  if(!bts.length){ el.innerHTML='<div class="notFound">No items added yet.</div>'; return; }
+  const groups = {};
+  bts.forEach(p=>{ const key=p.location || 'NO LOCATION'; (groups[key] ||= []).push(p); });
+  const keys=Object.keys(groups).sort((a,b)=> a.localeCompare(b, undefined, {numeric:true}));
+  el.innerHTML = keys.map(k=>`<div class="btsGroup"><div class="btsGroupHead"><div class="btsLoc">${k}</div><div class="btsCount">${groups[k].length} item${groups[k].length>1?'s':''}</div></div>${groups[k].map(p=>`<div class="btsItem"><strong>${p.code}</strong><button class="remove" data-remove="${p.code}">REMOVE</button><small>${p.name} ${p.shelf?`· Shelf ${p.shelf}`:''}</small></div>`).join('')}</div>`).join('');
+  [...el.querySelectorAll('[data-remove]')].forEach(b=>b.onclick=()=>{ bts=bts.filter(x=>x.code!==b.dataset.remove); localStorage.setItem('parisi_bts',JSON.stringify(bts)); renderBts(); });
 }
 
-$('searchInput').addEventListener('input', e => { query = e.target.value; renderSuggestions(); });
-$('searchInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') runSearch();
-});
-$('suggestions').addEventListener('click', e => {
-  const btn = e.target.closest('.suggestion');
-  if (btn) selectById(btn.dataset.id);
-});
-$('searchBtn').addEventListener('click', runSearch);
-$('clearBtn').addEventListener('click', () => { query = ''; $('searchInput').value = ''; $('suggestions').hidden = true; $('searchInput').focus(); });
-$('backHome').addEventListener('click', showHome);
-$('resultClose').addEventListener('click', showHome);
-$('copyLocation').addEventListener('click', () => copy(selectedItem?.location, 'Location'));
-$('copyShelf').addEventListener('click', () => copy(selectedItem?.shelf, 'Shelf'));
-$('addToBackstock').addEventListener('click', addCurrentToBackstock);
-$('openBackstock').addEventListener('click', () => { document.body.classList.add('backstock-mode'); document.body.classList.remove('result-mode'); $('home').hidden = true; $('resultScreen').hidden = true; $('backstockScreen').hidden = false; renderBackstock(); });
-$('closeBackstock').addEventListener('click', showHome);
-$('clearBackstock').addEventListener('click', () => { if (confirm('Clear Back to Stock queue?')) setQueue([]); });
-$('exportBackstock').addEventListener('click', exportBackstock);
-$('backstockGroups').addEventListener('click', e => { const btn = e.target.closest('.remove-item'); if (btn) removeQueueItem(btn.dataset.uid); });
-$('ocrBtn').addEventListener('click', startOCR);
-$('closeOcr').addEventListener('click', () => { $('ocrDialog').close(); stopOCR(); });
-$('ocrDialog').addEventListener('close', stopOCR);
-$('readText').addEventListener('click', readText);
-$('ocrCandidates').addEventListener('click', e => { const btn = e.target.closest('button[data-code]'); if (btn) searchCandidate(btn.dataset.code); });
+homeSearch.addEventListener('input',()=>renderSuggestions(homeSearch,$('homeSuggestions')));
+resultSearch.addEventListener('input',()=>renderSuggestions(resultSearch,$('resultSuggestions')));
+$('homeGo').onclick=()=>searchFrom(homeSearch); $('resultGo').onclick=()=>searchFrom(resultSearch);
+homeSearch.addEventListener('keydown',e=>{if(e.key==='Enter') searchFrom(homeSearch)});
+resultSearch.addEventListener('keydown',e=>{if(e.key==='Enter') searchFrom(resultSearch)});
+$('backHome').onclick=()=>show(home); $('backFromBts').onclick=()=>show(home); $('openBts').onclick=renderBts;
+$('clearBts').onclick=()=>{bts=[];localStorage.setItem('parisi_bts','[]');renderBts();};
+$('exportBts').onclick=()=>{ const rows=[['Code','Name','Location','Shelf','Stock']].concat(bts.map(p=>[p.code,p.name,p.location,p.shelf,p.stock])); const csv=rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n'); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='back-to-stock.csv'; a.click(); };
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-renderQueueMini();
-renderBackstock();
+$('ocrBtn').onclick=()=>$('ocrInput').click();
+$('ocrInput').onchange=async e=>{
+  const file=e.target.files?.[0]; if(!file) return;
+  if(!window.Tesseract){ $('ocrStatus').textContent='OCR library not loaded. Try again online.'; return; }
+  $('ocrStatus').textContent='Reading text...';
+  try{
+    const {data:{text}} = await Tesseract.recognize(file,'eng');
+    const candidate = cleanOcr(text);
+    $('ocrStatus').textContent = candidate ? `Detected: ${candidate}` : 'No product code detected.';
+    if(candidate){ homeSearch.value=candidate; searchFrom(homeSearch); }
+  }catch(err){ $('ocrStatus').textContent='OCR failed. Try a clearer photo.'; }
+  e.target.value='';
+};
+function cleanOcr(text){
+  const raw=(text||'').toUpperCase().replace(/[\s_]+/g,'');
+  const m=raw.match(/[A-Z]{1,3}[0-9O][.][0-9O]{2}[-.]?[A-Z0-9O.\-]{0,12}/) || raw.match(/[A-Z]{1,3}[.][0-9O]{2}[-.]?[A-Z0-9O.\-]{0,12}/);
+  let s=(m?m[0]:raw).replace(/O/g,'0').replace(/[^A-Z0-9.\-]/g,'');
+  return s.slice(0,24);
+}
